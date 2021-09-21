@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"time"
 )
 
 type server struct {
@@ -13,8 +14,17 @@ type server struct {
 }
 
 func newServer() *server {
+	roomMembersPair := make(map[string]*room)
+	allRooms, _ := findAllRooms()
+
+	for _, r := range allRooms {
+		roomMembersPair[r.RoomName] = &room{
+			name:    r.RoomName,
+			members: make(map[net.Addr]*client),
+		}
+	}
 	return &server{
-		rooms:    make(map[string]*room),
+		rooms:    roomMembersPair,
 		commands: make(chan command),
 	}
 }
@@ -73,6 +83,10 @@ func (s *server) join(c *client, args []string) {
 			members: make(map[net.Addr]*client),
 		}
 		s.rooms[roomName] = r
+		insertRoomInfo(&RoomInfo{
+			RoomName:  roomName,
+			CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
+		})
 	}
 
 	r.members[c.conn.RemoteAddr()] = c
@@ -82,15 +96,45 @@ func (s *server) join(c *client, args []string) {
 	c.room = r
 	r.broadcast(c, fmt.Sprintf("%s has joined the room", c.nick))
 	c.msgToClient(fmt.Sprintf("welcome to %s", r.name))
+
+	chatContents, _ := loadRoomInfos(roomName)
+	for _, chat := range chatContents {
+		t := chat.CreatedAt
+		c.msgToClientForReloadMsg(t + " > " + chat.Username + ": " + chat.Conversation)
+	}
+}
+
+func insertRoomInfo(roomInfo *RoomInfo) error {
+	if result := db.Create(roomInfo); result.Error != nil {
+		return result.Error
+	}
+	return nil
+}
+
+func loadRoomInfos(roomName string) ([]ChatInfo, error) {
+	var allInfos []ChatInfo
+	if result := db.Where("room_name = ?", roomName).Find(&allInfos); result.Error != nil {
+		return nil, result.Error
+	}
+	return allInfos, nil
 }
 
 func (s *server) listRooms(c *client, args []string) {
-	var rooms []string
-	for name := range s.rooms {
-		rooms = append(rooms, name)
+	var rooms, _ = findAllRooms()
+	var allRooms []string
+	for _, room := range rooms {
+		allRooms = append(allRooms, room.RoomName)
 	}
 
-	c.msgToClient(fmt.Sprintf("available rooms are: %s", strings.Join(rooms, ", ")))
+	c.msgToClient(fmt.Sprintf("available rooms are: %s", strings.Join(allRooms, ", ")))
+}
+
+func findAllRooms() ([]RoomInfo, error) {
+	var allRooms []RoomInfo
+	if result := db.Find(&allRooms); result.Error != nil {
+		return nil, result.Error
+	}
+	return allRooms, nil
 }
 
 func (s *server) msgToCurrentRoom(c *client, args []string) {
@@ -103,7 +147,23 @@ func (s *server) msgToCurrentRoom(c *client, args []string) {
 		c.msgToClient("MSG is required, usage: /msg MSG")
 		return
 	}
+
+	chatInfo := &ChatInfo{
+		CreatedAt:    time.Now().Format("2006-01-02 15:04:05"),
+		Username:     c.nick,
+		RoomName:     c.room.name,
+		Conversation: strings.Join(args[1:], " "),
+	}
+	insertChatInfo(chatInfo)
+
 	c.room.broadcast(c, c.nick+": "+strings.Join(args[1:], " "))
+}
+
+func insertChatInfo(chatInfo *ChatInfo) error {
+	if result := db.Create(chatInfo); result.Error != nil {
+		return result.Error
+	}
+	return nil
 }
 
 func (s *server) quit(c *client, args []string) {

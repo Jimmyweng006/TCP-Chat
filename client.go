@@ -73,3 +73,7 @@ func (c *client) msgToClient(msg string) {
 
 	c.conn.Write([]byte(t.Format("2006-01-02 15:04:05") + " > " + msg + "\n"))
 }
+
+func (c *client) msgToClientForReloadMsg(msg string) {
+	c.conn.Write([]byte(msg + "\n"))
+}

@@ -2,6 +2,13 @@
 
 > This project is based on https://github.com/plutov/packagemain/tree/master/20-tcp-chat
 
+## functionality
+
+```
+1. provide every chatinfo with send time
+2. store registered rooms
+3. reload room's history chatinfos when user joins registered rooms
+```
 ## build command
 
 ```
